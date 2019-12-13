@@ -133,6 +133,7 @@ def tanh(x):
   return _scalar(x, tf.tanh)
 
 
+@utils.np_doc(np.sqrt)
 def sqrt(x):
   return _scalar(x, tf.sqrt)
 

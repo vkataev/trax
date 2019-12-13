@@ -18,6 +18,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+# TODO(wangpeng): Use tf_inspect once we move into TF.
+import inspect
 import numpy as np
 import tensorflow.compat.v2 as tf
 
@@ -177,3 +179,64 @@ def result_type(*arrays_and_dtypes):
       return array_dtype(x).as_numpy_dtype
   np_dtypes = [get_dtype(x) for x in arrays_and_dtypes]
   return dtypes.get_result_type(*np_dtypes)
+
+
+def _has_docstring(f):
+  return hasattr(f, '__doc__') and isinstance(f.__doc__, str) and f.__doc__
+
+
+def _add_blank_line(s):
+  if s.endswith('\n'):
+    return s + '\n'
+  else:
+    return s + '\n\n'
+
+
+def np_doc(np_fun):
+  """Attachs numpy docstring to a function.
+
+  Args:
+    np_fun: the numpy function whose docstring will be used.
+
+  Returns:
+    A function decorator that attaches the docstring from `np_fun` to the
+    decorated function.
+  """
+  np_sig = inspect.signature(np_fun)
+  def decorator(f):
+    """The decorator."""
+    sig = inspect.signature(f)
+    for name, param in sig.parameters.items():
+      np_param = np_sig.parameters.get(name)
+      if np_param is None:
+        raise TypeError('Cannot find parameter "%s" in the numpy function\'s '
+                        'signature' % name)
+      if param.kind != np_param.kind:
+        raise TypeError('Parameter "%s" is of kind %s while in numpy it is of '
+                        'kind %s' % (name, param.kind, np_param.kind))
+      has_default = (param.default != inspect.Parameter.empty)
+      np_has_default = (np_param.default != inspect.Parameter.empty)
+      if has_default != np_has_default:
+        raise TypeError('Parameter "%s" should%s have a default value' %
+                        (name, '' if np_has_default else ' not'))
+    unsupported_params = []
+    for name in np_sig.parameters:
+      if name not in sig.parameters:
+        unsupported_params.append(name)
+    if not unsupported_params and not _has_docstring(f) and _has_docstring(
+        np_fun):
+      f.__doc__ = np_fun.__doc__
+      return f
+    doc = 'TensorFlow variant of `numpy.%s`.\n\n' % np_fun.__name__
+    if unsupported_params:
+      doc += 'Unsupported arguments: ' + ', '.join(
+          '`' + name + '`' for name in unsupported_params) + '.\n\n'
+    if _has_docstring(f):
+      doc += f.__doc__
+      doc = _add_blank_line(doc)
+    if _has_docstring(np_fun):
+      doc += 'Documentation for `numpy.%s`:\n\n' % np_fun.__name__
+      doc += np_fun.__doc__
+    f.__doc__ = doc
+    return f
+  return decorator
